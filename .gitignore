@@ -1,0 +1,26 @@
+# Secrets - never commit these
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Local database (each member creates their own with "python manage.py migrate")
+db.sqlite3
+db.sqlite3-journal
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Collected static files
+staticfiles/
