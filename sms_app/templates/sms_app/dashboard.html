@@ -1,0 +1,83 @@
+{% extends "sms_app/base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-speedometer2 text-primary"></i> Dashboard</h1>
+  <span class="badge rounded-pill text-bg-light border"><i class="bi bi-hdd-network"></i> {{ provider_name }}</span>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card stat-card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="small text-body-secondary">Total attempts</div>
+      <div class="display-6">{{ totals.total }}</div>
+      <div class="small text-body-secondary">{{ today_count }} today</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card stat-card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="small text-body-secondary">Delivered (confirmed)</div>
+      <div class="display-6 text-success">{{ totals.delivered }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card stat-card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="small text-body-secondary">Awaiting confirmation</div>
+      <div class="display-6 text-primary">{{ totals.in_progress }}</div>
+      <div class="small text-body-secondary">submitted or sent</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card stat-card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="small text-body-secondary">Failed / undelivered</div>
+      <div class="display-6 text-danger">{{ totals.failed }}</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <h2 class="h6 fw-semibold">Attempts by status</h2>
+      {% for row in by_status %}
+        <div class="d-flex justify-content-between align-items-center border-top py-2">
+          <span class="badge text-bg-{{ row.badge }}">{{ row.label }}</span>
+          <a class="fw-semibold text-decoration-none" href="{% url 'sms_app:history' %}?status={{ row.value }}">{{ row.count }}</a>
+        </div>
+      {% endfor %}
+      <p class="small text-body-secondary mt-3 mb-0">
+        {% if acceptance_rate is not None %}
+          The provider accepted <strong>{{ acceptance_rate }}%</strong> of real sending attempts.
+        {% else %}
+          No real (non-simulated) attempts yet.
+        {% endif %}
+      </p>
+    </div></div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h6 fw-semibold mb-0">Latest attempts</h2>
+        <a href="{% url 'sms_app:history' %}" class="small">Full history</a>
+      </div>
+      {% for sms in recent %}
+        <div class="d-flex justify-content-between align-items-start border-top py-2 small gap-2">
+          <div class="text-truncate">
+            <div class="fw-semibold">{{ sms.recipient }}</div>
+            <div class="text-body-secondary text-truncate">{{ sms.body }}</div>
+          </div>
+          <div class="text-end text-nowrap">
+            {% include "sms_app/_status_badge.html" %}
+            <div class="text-body-secondary">{{ sms.created_at|timesince }} ago</div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="small text-body-secondary mb-0">Nothing sent yet. <a href="{% url 'sms_app:compose' %}">Send your first SMS</a>.</p>
+      {% endfor %}
+    </div></div>
+  </div>
+</div>
+{% endblock %}
