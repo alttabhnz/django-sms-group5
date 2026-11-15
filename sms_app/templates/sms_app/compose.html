@@ -1,0 +1,124 @@
+{% extends "sms_app/base.html" %}
+{% load static %}
+
+{% block title %}Send SMS{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h1 class="h4 mb-0"><i class="bi bi-send-fill text-primary"></i> Send an SMS</h1>
+          <span class="badge rounded-pill text-bg-light border" title="SMS provider in use">
+            <i class="bi bi-hdd-network"></i> {{ provider_name }}
+          </span>
+        </div>
+
+        {# novalidate: let Django's server-side validation show its friendly messages #}
+        <form method="post" novalidate id="sms-form">
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors|join:" " }}</div>
+          {% endif %}
+
+          {# Recipient #}
+          <div class="mb-3">
+            <label for="{{ form.recipient.id_for_label }}" class="form-label fw-semibold">
+              {{ form.recipient.label }}
+            </label>
+            <div class="input-group has-validation">
+              <span class="input-group-text"><i class="bi bi-phone"></i></span>
+              <input type="text" name="{{ form.recipient.html_name }}" id="{{ form.recipient.id_for_label }}"
+                     value="{{ form.recipient.value|default_if_none:'' }}"
+                     class="form-control form-control-lg {% if form.recipient.errors %}is-invalid{% endif %}"
+                     placeholder="09171234567" autocomplete="tel" inputmode="tel" maxlength="25"
+                     aria-describedby="recipient-help">
+              {% for error in form.recipient.errors %}
+                <div class="invalid-feedback">{{ error }}</div>
+              {% endfor %}
+            </div>
+            <div id="recipient-help" class="form-text">{{ form.recipient.help_text }}</div>
+          </div>
+
+          {# Message #}
+          <div class="mb-2">
+            <label for="{{ form.message.id_for_label }}" class="form-label fw-semibold">{{ form.message.label }}</label>
+            <textarea name="{{ form.message.html_name }}" id="{{ form.message.id_for_label }}" rows="5"
+                      maxlength="1600" placeholder="Type your message here..."
+                      class="form-control {% if form.message.errors %}is-invalid{% endif %}"
+                      aria-describedby="char-counter">{{ form.message.value|default_if_none:'' }}</textarea>
+            {% for error in form.message.errors %}
+              <div class="invalid-feedback">{{ error }}</div>
+            {% endfor %}
+          </div>
+
+          {# Character counter (additional feature) #}
+          <div id="char-counter" class="d-flex flex-wrap justify-content-between small text-body-secondary mb-3"
+               aria-live="polite">
+            <span><span id="char-count">0</span> characters · <span id="encoding">GSM-7</span></span>
+            <span><span id="segment-count">0</span> SMS part(s) ·
+              <span id="chars-left">160</span> left in this part</span>
+          </div>
+
+          {# Message preview (additional feature) #}
+          <div class="mb-4">
+            <div class="small fw-semibold text-body-secondary mb-1"><i class="bi bi-eye"></i> Preview</div>
+            <div class="phone-preview">
+              <div class="small text-body-secondary mb-1">To: <span id="preview-to">—</span></div>
+              <div class="bubble" id="preview-text"><span class="text-body-secondary">Your message will appear here.</span></div>
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary btn-lg" id="send-btn">
+              <span class="spinner-border spinner-border-sm d-none me-1" role="status" aria-hidden="true"></span>
+              <i class="bi bi-send"></i> Send SMS
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h2 class="h6 fw-semibold"><i class="bi bi-info-circle text-primary"></i> How it works</h2>
+        <ol class="small mb-0 ps-3">
+          <li>Enter a mobile number and your message.</li>
+          <li>The app checks your inputs.</li>
+          <li>It submits the message to the SMS provider ({{ provider_name }}).</li>
+          <li>You see the result here. “Submitted” means the provider accepted it; delivery is
+            confirmed later in <a href="{% url 'sms_app:history' %}">History</a>.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 fw-semibold mb-0"><i class="bi bi-clock-history text-primary"></i> Recent messages</h2>
+          <a href="{% url 'sms_app:history' %}" class="small">View all</a>
+        </div>
+        {% for sms in recent %}
+          <div class="border-top py-2 small">
+            <div class="d-flex justify-content-between">
+              <span class="fw-semibold">{{ sms.recipient }}</span>
+              {% include "sms_app/_status_badge.html" %}
+            </div>
+            <div class="text-body-secondary text-truncate">{{ sms.body }}</div>
+          </div>
+        {% empty %}
+          <p class="small text-body-secondary mb-0">No messages sent yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'sms_app/js/compose.js' %}"></script>
+{% endblock %}
