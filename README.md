@@ -472,7 +472,7 @@ python manage.py test
 ```
 Found 103 test(s).
 ...
-Ran 103 tests in X.XXXs
+Ran 103 tests in 0.378s
 
 OK
 ```
