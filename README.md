@@ -397,7 +397,7 @@ Setup:
    runs Django, for example ngrok:
 
    ```bat
-   python manage.py runserver
+   python manage.py runserver 8001
    ngrok http 8001
    ```
 
@@ -443,7 +443,7 @@ shows a yellow warning that nothing was really sent.
 
 ```bat
 venv\Scripts\activate
-python manage.py runserver
+python manage.py runserver 8001
 ```
 
 Open <http://127.0.0.1:8001/> in your browser.
@@ -501,9 +501,9 @@ OK
 |---|---|
 | SMS to a verified/authorised test number | ✅ Pass. Sent with httpSMS on Nov 17, 2026; the message reached **Delivered (confirmed)**. |
 | *Check status* after sending | _To be filled in (httpSMS statuses also update automatically through the webhook)._ |
-| Unverified number (Twilio trial) | _To be filled in. Expected: error 21608 explained._ |
+| Unverified number (Twilio trial) | Not tested: Twilio's trial doesn't support the Philippines; the instructor approved a free alternative. |
 | Wrong Auth Token / API key | _To be filled in._ |
-| SMS via Traccar SMS Gateway (phone on the same Wi-Fi) | _To be filled in. Expected: **Submitted**; wrong API key → credentials error; phone off → "Could not reach the SMS gateway on the phone". |
+| SMS via Traccar SMS Gateway (phone on the same Wi-Fi) | Not tested: httpSMS was used for the demo. |
 | SMS via httpSMS (phone with internet) | ✅ Pass. On Nov 17, 2026 the message was **Submitted** with a message ID and then reached **Delivered (confirmed)**. Wrong API key → credentials error: _to be filled in._ |
 | Wi-Fi turned off while sending | _To be filled in. Expected: network error message._ |
 | httpSMS delivery webhook (through a tunnel) | ✅ Pass. Status updated to **Delivered (confirmed)** on Nov 17, 2026 without clicking *Check status*. |
