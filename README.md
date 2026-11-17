@@ -4,9 +4,11 @@
 
 A Django web application that sends SMS messages through an SMS gateway API.
 The user enters a recipient's mobile number and a message; the app validates
-the input, submits the message to the configured SMS provider (Twilio or
-Semaphore), and shows clear success or failure feedback. Every attempt is
-saved so it can be tracked in a message history and a dashboard.
+the input, submits the message to the configured SMS provider (Twilio,
+Semaphore, the Traccar SMS Gateway or httpSMS), and shows clear success or
+failure
+feedback. Every attempt is saved so it can be tracked in a message history
+and a dashboard.
 
 **Who it is for:** anyone who needs to send quick text messages from a web
 browser, such as a small office sending reminders, or a school organisation
@@ -67,7 +69,7 @@ All members reviewed the complete application and can explain how each part work
 | **Character counter** | *Send SMS* page | Live count of characters and SMS parts. Detects Unicode (e.g. emoji), which lowers the limit from 160 to 70 characters per SMS. |
 | **Message preview** | *Send SMS* page | Shows how the SMS will look and the number in international format before sending. |
 | **Simulation mode** | `SMS_PROVIDER=console` | Develop and test without spending credits. Clearly labelled; it never claims a message was really sent. |
-| **Multiple providers** | `.env` | Switch between Twilio, Semaphore and simulation mode without changing code. |
+| **Multiple providers** | `.env` | Switch between Twilio, Semaphore, Traccar SMS Gateway, httpSMS and simulation mode without changing code. |
 
 | History | Dashboard |
 |---|---|
@@ -125,7 +127,7 @@ All members reviewed the complete application and can explain how each part work
 | Django 6.1 | Web framework (views, URL routing, forms, templates, ORM, CSRF protection, admin) |
 | SQLite | Database for message history (Django's default) |
 | Twilio Python SDK (`twilio`) | Calls the Twilio Programmable Messaging API |
-| `requests` | Calls the Semaphore REST API |
+| `requests` | Calls the Semaphore REST API, the Traccar SMS Gateway HTTP API and the httpSMS cloud API (HTTP POST/GET) |
 | `python-dotenv` | Loads secrets from the `.env` file |
 | Bootstrap 5.3 and Bootstrap Icons | Responsive user interface (loaded from a CDN) |
 | HTML, CSS, JavaScript | Templates, custom styles, live character counter and preview |
@@ -154,7 +156,7 @@ django-sms-group5/
 └── sms_app/                   # Django application
     ├── models.py              # SMSMessage: one row per sending attempt
     ├── forms.py               # SMSForm, phone number conversion, SMS part counting
-    ├── services.py            # Twilio / Semaphore / simulation providers + error handling
+    ├── services.py            # Twilio / Semaphore / Traccar / httpSMS / simulation providers + error handling
     ├── views.py               # compose, history, check_status, dashboard
     ├── urls.py                # App URLs
     ├── admin.py               # SMS messages in the Django admin
@@ -221,7 +223,7 @@ copy .env.example .env
 | `DJANGO_SECRET_KEY` | Yes | Django's secret key (step 5). |
 | `DJANGO_DEBUG` | No | `True` for local development (needed to serve CSS/JS with `runserver`). |
 | `DJANGO_ALLOWED_HOSTS` | No | Default `127.0.0.1,localhost`. |
-| `SMS_PROVIDER` | Yes | `twilio`, `semaphore` or `console`. |
+| `SMS_PROVIDER` | Yes | `twilio`, `semaphore`, `traccar`, `httpsms` or `console`. |
 | `SMS_DEFAULT_COUNTRY_CODE` | No | Default `63` (Philippines), used to convert `09…` numbers. |
 | `SMS_REQUEST_TIMEOUT` | No | Seconds to wait for the provider. Default `15`. |
 | `TWILIO_ACCOUNT_SID` | Twilio | Account SID (starts with `AC`). |
@@ -230,6 +232,12 @@ copy .env.example .env
 | `TWILIO_MESSAGING_SERVICE_SID` | No | Use a Messaging Service (`MG…`) instead of `TWILIO_FROM_NUMBER`. |
 | `SEMAPHORE_API_KEY` | Semaphore | API key. **Secret.** |
 | `SEMAPHORE_SENDER_NAME` | No | Your approved sender name. Blank = your account's default. |
+| `TRACCAR_GATEWAY_URL` | Traccar | The phone's gateway address, e.g. `http://192.168.1.245:8082`. |
+| `TRACCAR_API_KEY` | Traccar | The API key set inside the phone app. **Secret.** Blank if the app needs none. |
+| `TRACCAR_SLOT` | No | SIM slot index for dual-SIM phones (`0` = first SIM). Blank = default SIM. |
+| `HTTPSMS_API_KEY` | httpSMS | API key from <https://httpsms.com/settings>. **Secret.** |
+| `HTTPSMS_FROM_NUMBER` | httpSMS | The phone number that sends the SMS, e.g. `09171234567`. |
+| `HTTPSMS_SERVER_URL` | No | API base URL. Default `https://api.httpsms.com` (change only for a self-hosted instance). |
 
 > **Never commit `.env`.** It is already listed in `.gitignore`. Only
 > `.env.example`, which contains placeholders, is in the repository.
@@ -277,7 +285,92 @@ SEMAPHORE_SENDER_NAME=
 Semaphore only sends to Philippine mobile numbers, and it ignores messages
 that start with the word "TEST". The app warns about both before sending.
 
-### Option C: Simulation mode (no account needed)
+### Option C: Traccar SMS Gateway (sends with your phone's SIM card)
+
+This option uses the free **Traccar SMS Gateway** Android app instead of a
+paid cloud provider: the phone itself exposes a small HTTP API, and the Django
+app calls it with an HTTP POST (`requests.post`) to send the real SMS using
+the phone's SIM load / unli-text promo.
+
+1. Install **Traccar SMS Gateway** on an Android phone
+   (<https://www.traccar.org/sms-gateway/> — Google Play or the APK link).
+2. Open the app, set it as the default messaging app if asked, and start the
+   **gateway service**. The phone shows:
+   `Send SMS using following API: POST / {"to": "+10000000000", "message": "..."}`
+3. In the app's settings, create an **API key** (`gateway_api_key`). The app
+   compares it with the `Authorization` header of every request.
+4. Put the phone and your computer on the **same Wi-Fi network** and note the
+   phone's IP address (Android → Wi-Fi → connected network), e.g. `192.168.1.245`.
+   The default port is `8082`.
+5. Fill in `.env` and set the provider:
+
+```env
+SMS_PROVIDER=traccar
+TRACCAR_GATEWAY_URL=http://192.168.1.245:8082
+TRACCAR_API_KEY=your_api_key_from_the_phone_app
+TRACCAR_SLOT=
+```
+
+> **Security notes:** the gateway key lives only in `.env` (never in the
+> source code), it is sent as the `Authorization` header, and it is never
+> printed in the logs or shown in the browser. Because the API listens on the
+> local network, always set an API key in the phone app and keep the phone on
+> a trusted network — anyone who can reach that address can send SMS from
+> your SIM. Use `https://` only if you put the gateway behind a
+> TLS-terminating reverse proxy; the stock app serves plain `http://`.
+
+What the gateway supports:
+
+| Topic | Behaviour |
+|---|---|
+| Request | `POST` JSON `{"to": "+639…", "message": "…"}` with an optional `"slot"` for dual-SIM phones |
+| Success | HTTP 200 → the app shows **Submitted** (the phone is sending the SMS) |
+| Wrong API key | HTTP 401 → "The SMS provider rejected the app's credentials…" |
+| Send failure | HTTP 500 with a short reason → a plain-language message; the raw reason is only written to the server log |
+| Phone unreachable | Connection error → "Could not reach the SMS gateway on the phone…" |
+| Delivery receipts | **None.** The gateway returns no message ID and no delivery status, so messages stay *Submitted* and *Check status* is not offered |
+
+### Option D: httpSMS (sends with your phone's SIM card and reports delivery)
+
+This option is like Traccar, but the request goes through the **httpSMS cloud
+API**, which triggers the Android app to send the SMS with the phone's own SIM
+card — and then reports the **real delivery status** back, so messages can
+reach *Delivered* with the *Check status* button.
+
+1. Create a free account at <https://httpsms.com/> and open
+   <https://httpsms.com/settings> to copy your **API key**.
+2. Download and install **HttpSms.apk** on an Android phone
+   (<https://github.com/NdoleStudio/httpsms/releases/latest/download/HttpSms.apk>).
+3. Open the app and sign in with **"Login With API Key"** (paste the key from
+   step 1). The phone needs an internet connection (any network — it does not
+   have to be on the same Wi-Fi as the computer).
+4. Fill in `.env` and set the provider:
+
+```env
+SMS_PROVIDER=httpsms
+HTTPSMS_API_KEY=your_api_key_from_httpsms_settings
+HTTPSMS_FROM_NUMBER=09171234567
+HTTPSMS_SERVER_URL=https://api.httpsms.com
+```
+
+> **Security notes:** the API key lives only in `.env` (never in the source
+> code), it is sent as the `x-api-key` header, and it is never printed in the
+> logs or shown in the browser. Message content passes through the httpSMS
+> cloud on its way to your phone (end-to-end encryption is optional in their
+> app); use Traccar instead if you need the request to stay on your LAN.
+
+What the API supports:
+
+| Topic | Behaviour |
+|---|---|
+| Request | `POST /v1/messages/send` JSON `{"content": "…", "from": "+639…", "to": "+639…"}` |
+| Success | HTTP 200 → a **message ID** is saved, the app shows **Submitted** and the *Check status* button appears |
+| Wrong API key | HTTP 401/403 → "The SMS provider rejected the app's credentials…" |
+| Invalid number/sender/text | HTTP 400/422 with the failing field → a plain-language message naming the problem |
+| Status check | `GET /v1/messages/<id>` → *Submitted → Sent to carrier → Delivered* (or *Failed*) |
+| Phone offline | The message stays *Pending* in httpSMS until the phone is reachable |
+
+### Option E: Simulation mode (no account needed)
 
 ```env
 SMS_PROVIDER=console
@@ -311,7 +404,7 @@ Press `Ctrl+C` in the terminal to stop the server.
 
 ### 1. Automated tests
 
-The app has **52 automated tests** that use mocked provider APIs, so they run
+The app has **84 automated tests** that use mocked provider APIs, so they run
 offline and never send a real SMS or need real credentials.
 
 ```bat
@@ -319,9 +412,9 @@ python manage.py test
 ```
 
 ```
-Found 52 test(s).
+Found 84 test(s).
 ...
-Ran 52 tests in 0.1s
+Ran 84 tests in 0.3s
 
 OK
 ```
@@ -329,7 +422,7 @@ OK
 | Test file | What it checks |
 |---|---|
 | `test_forms.py` (12) | Phone number conversion for 8 valid formats, 10 invalid numbers, empty fields, spaces-only message, message length, character and SMS part counting |
-| `test_services.py` (20) | Twilio and Semaphore success, wrong credentials, invalid number, unverified trial number, unknown provider error, network error, timeout, missing configuration, status mapping, simulation mode |
+| `test_services.py` (52) | Twilio, Semaphore, Traccar and httpSMS success, wrong credentials, invalid number, unverified trial number, unknown provider error, network error, timeout, missing configuration, status mapping (including *Delivered*), simulation mode |
 | `test_views.py` (20) | Full page flows: form display, valid send, every validation error, credential errors not leaking secrets, network errors, no double-send on refresh, CSRF protection, HTML escaping, history filter, status check, dashboard totals |
 
 ### 2. Assignment test cases (Step 6)
@@ -352,6 +445,8 @@ OK
 | *Check status* after sending | _To be filled in._ |
 | Unverified number (Twilio trial) | _To be filled in. Expected: error 21608 explained._ |
 | Wrong Auth Token / API key | _To be filled in._ |
+| SMS via Traccar SMS Gateway (phone on the same Wi-Fi) | _To be filled in. Expected: **Submitted**; wrong API key → credentials error; phone off → "Could not reach the SMS gateway on the phone". |
+| SMS via httpSMS (phone with internet) | _To be filled in. Expected: **Submitted** with a message ID, then *Check status* → **Sent to carrier** → **Delivered**; wrong API key → credentials error. |
 | Wi-Fi turned off while sending | _To be filled in. Expected: network error message._ |
 | Mobile browser layout | ✅ Pass. Works at 390 px wide with no horizontal scrolling. |
 
@@ -362,7 +457,7 @@ OK
 - **Credentials are stored in environment variables** (`.env`, loaded with `python-dotenv`), never in the source code.
 - **`.env` is excluded by `.gitignore`.** Only `.env.example` with placeholders is committed.
 - **The Django `SECRET_KEY` also comes from `.env`.** The app refuses to start without one.
-- **Errors never show secrets.** User messages are written by the app, not copied from the provider, and logs record only error codes, never keys or request URLs.
+- **Provider errors never show secrets.** User messages are written by the app, not copied from the provider, and logs record only error codes, never keys or request URLs. The Traccar API key is sent as the `Authorization` header and the httpSMS key as the `x-api-key` header; neither is ever logged or displayed, and the gateway's raw error text is only written to the server log.
 - **CSRF protection** (`{% csrf_token %}` and `CsrfViewMiddleware`) on every form, including *Check status*.
 - **Django's auto-escaping** prevents HTML/script injection in message text; the preview uses `textContent`.
 - **Safe redirects:** *Check status* only redirects to local URLs.
@@ -382,3 +477,19 @@ OK
 5. **One recipient per message.** Bulk sending and contact management are not included.
 6. **Development server only.** The app is configured for local use with `runserver` and SQLite, not production hosting.
 7. **Bootstrap loads from a CDN,** so the page looks unstyled without internet (sending SMS needs internet anyway).
+8. **Traccar SMS Gateway needs the phone on the same network.** The gateway
+   address is a local `http://` URL (default port `8082`), so it only works
+   while the phone is powered on, the app's gateway service is running, and
+   the phone and the computer share a trusted network. It reports no message
+   ID and no delivery receipts, so Traccar messages stay *Submitted* and
+   *Check status* is not offered for them.
+9. **The Traccar gateway is not a paid-grade API.** Anyone who can reach the
+   URL without the API key could send SMS from the phone's SIM, which is why
+   an API key and a trusted network are required.
+10. **httpSMS routes messages through its cloud.** The Django app sends the
+    request to `api.httpsms.com`, which relays it to the phone, so message
+    content passes through their servers (optional end-to-end encryption is
+    available in their app). Delivery status also depends on the phone being
+    online; a phone that is unreachable leaves the message *Pending* until it
+    reconnects. The service is free but third-party — its availability is
+    outside this project's control.

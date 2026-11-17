@@ -157,6 +157,10 @@ MESSAGE_TAGS = {
 # SMS_PROVIDER chooses which gateway sends the messages:
 #   "twilio"    - Twilio Programmable Messaging
 #   "semaphore" - Semaphore, a Philippine SMS gateway
+#   "traccar"   - Traccar SMS Gateway: an Android app that sends the SMS
+#                 with the phone's own SIM card through a local HTTP API
+#   "httpsms"   - httpSMS: a cloud API that tells your Android phone to
+#                 send the SMS with its own SIM card (reports delivery)
 #   "console"   - simulation mode for development; nothing is really sent
 SMS_PROVIDER = os.getenv("SMS_PROVIDER", "twilio").strip().lower()
 
@@ -167,6 +171,23 @@ TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "").str
 
 SEMAPHORE_API_KEY = os.getenv("SEMAPHORE_API_KEY", "").strip()
 SEMAPHORE_SENDER_NAME = os.getenv("SEMAPHORE_SENDER_NAME", "").strip()
+
+# Traccar SMS Gateway (Android app running an HTTP API on the phone).
+# Docs: https://www.traccar.org/sms-gateway/
+TRACCAR_GATEWAY_URL = os.getenv("TRACCAR_GATEWAY_URL", "").strip().rstrip("/")
+TRACCAR_API_KEY = os.getenv("TRACCAR_API_KEY", "").strip()
+# Optional SIM slot index for dual-SIM phones (0 = first SIM). Blank = default SIM.
+TRACCAR_SLOT = os.getenv("TRACCAR_SLOT", "").strip()
+
+# httpSMS (cloud API that triggers the Android app to send the SMS).
+# Docs: https://docs.httpsms.com/
+HTTPSMS_API_KEY = os.getenv("HTTPSMS_API_KEY", "").strip()
+# The phone number that sends the SMS (the number registered in the app).
+HTTPSMS_FROM_NUMBER = os.getenv("HTTPSMS_FROM_NUMBER", "").strip()
+HTTPSMS_SERVER_URL = os.getenv("HTTPSMS_SERVER_URL", "https://api.httpsms.com").strip().rstrip("/")
+# Shared secret used to verify the JWT signature of httpSMS webhooks
+# (delivery receipts). Set the same value in httpsms.com/settings > Webhooks.
+HTTPSMS_WEBHOOK_SIGNING_KEY = os.getenv("HTTPSMS_WEBHOOK_SIGNING_KEY", "").strip()
 
 # Seconds to wait for the SMS provider before giving up.
 SMS_REQUEST_TIMEOUT = int(os.getenv("SMS_REQUEST_TIMEOUT", "15"))

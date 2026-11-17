@@ -11,19 +11,31 @@ Workflow for sending an SMS (compose view):
     5. The attempt is saved to the database (history), whatever the result.
     6. The user is redirected back to the form and sees a success or failure
        message (Post/Redirect/Get, so refreshing the page never re-sends).
+
+The webhook view (httpsms_webhook) is different: httpSMS calls it, not a
+browser, so it accepts POST only, skips CSRF (no session exists) and verifies
+the JWT signature of the payload with HTTPSMS_WEBHOOK_SIGNING_KEY instead.
 """
 
+import json
+import logging
+
+import jwt
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from . import services
 from .forms import SMSForm, sms_info
 from .models import SMSMessage
+
+logger = logging.getLogger(__name__)
 
 
 @require_http_methods(["GET", "POST"])
@@ -115,6 +127,63 @@ def check_status(request, pk):
         # The status check itself failed (e.g. no internet). Keep the old status.
         messages.error(request, f"Could not check the status: {result.user_message}")
     return redirect(_back_to_history(request))
+
+
+@csrf_exempt
+@require_POST
+def httpsms_webhook(request):
+    """Receive httpSMS delivery receipts (webhooks) and update the history.
+
+    httpSMS POSTs a CloudEvents document every time a message is sent,
+    delivered, failed or expired, with an `Authorization: Bearer <JWT>`
+    signed (HS256) with the webhook's signing key. We verify that signature
+    before touching the database, then move the matching message's status
+    forward (e.g. Submitted -> Delivered (confirmed)) so the dashboard
+    reports real delivery without anyone clicking "Check status".
+
+    Always answers 200 for events we processed or do not care about, so
+    httpSMS does not retry. Only a bad signature is rejected (401).
+    """
+    signing_key = settings.HTTPSMS_WEBHOOK_SIGNING_KEY
+    token = ""
+    authorization = request.META.get("HTTP_AUTHORIZATION", "")
+    if authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+
+    if not token or not signing_key:
+        logger.warning(
+            "httpSMS webhook rejected: %s",
+            "missing Authorization header" if not token else
+            "HTTPSMS_WEBHOOK_SIGNING_KEY is not set in .env",
+        )
+        return JsonResponse({"status": "error", "detail": "unauthorized"}, status=401)
+
+    try:
+        jwt.decode(token, signing_key, algorithms=["HS256"])
+    except jwt.InvalidTokenError:
+        logger.warning("httpSMS webhook rejected: invalid signature")
+        return JsonResponse({"status": "error", "detail": "unauthorized"}, status=401)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        # A broken payload must not be retried forever: acknowledge it.
+        logger.warning("httpSMS webhook: payload is not valid JSON")
+        return JsonResponse({"status": "ignored"})
+
+    event_type = payload.get("type") or request.META.get("HTTP_X_EVENT_TYPE", "")
+    outcome = services.apply_httpsms_webhook(event_type, payload.get("data"))
+    return JsonResponse({"status": outcome})
+
+
+@require_GET
+def health(request):
+    """Liveness probe: 200 + a tiny JSON body while the app can serve pages.
+
+    Monitoring tools poll this instead of the home page, so it stays cheap
+    and never touches the database.
+    """
+    return JsonResponse({"status": "ok", "provider": services.provider_display_name()})
 
 
 def dashboard(request):
