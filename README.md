@@ -6,9 +6,8 @@ A Django web application that sends SMS messages through an SMS gateway API.
 The user enters a recipient's mobile number and a message; the app validates
 the input, submits the message to the configured SMS provider (Twilio,
 Semaphore, the Traccar SMS Gateway or httpSMS), and shows clear success or
-failure
-feedback. Every attempt is saved so it can be tracked in a message history
-and a dashboard.
+failure feedback. Every attempt is saved so it can be tracked in a message
+history and a dashboard.
 
 **Who it is for:** anyone who needs to send quick text messages from a web
 browser, such as a small office sending reminders, or a school organisation
@@ -38,9 +37,9 @@ notifying members, without using their own phone.
 
 | Member | Role | Main files |
 |---|---|---|
-| **Salubre, Ariel** | Django project setup, views, URLs and application logic | `sms_project/settings.py`, `sms_project/urls.py`, `sms_app/models.py`, `sms_app/views.py`, `sms_app/urls.py`, `sms_app/admin.py`, migrations |
+| **Salubre, Ariel** | Free SMS providers (Traccar SMS Gateway and httpSMS), the httpSMS delivery webhook, real-provider testing and the demonstration | Traccar and httpSMS parts of `sms_app/services.py`, `httpsms_webhook` in `sms_app/views.py`, `sms_app/urls.py` (webhook route), `.env.example`, their tests in `sms_app/tests/test_services.py` and `test_views.py` |
 | **Monoy, Hanz Rexis** | User interface, forms, validation and user feedback | `sms_app/forms.py`, `sms_app/templates/`, `sms_app/static/`, `sms_app/tests/test_forms.py` |
-| **Silab, Ryan Jose** | SMS provider integration, testing, documentation and demonstration | `sms_app/services.py`, `sms_app/tests/test_services.py`, `sms_app/tests/test_views.py`, `README.md` |
+| **Silab, Ryan Jose** | Django project setup, models, views and URLs; Twilio and Semaphore integration; automated tests and documentation | `sms_project/settings.py`, `sms_project/urls.py`, `sms_app/models.py`, `sms_app/views.py`, `sms_app/urls.py`, `sms_app/admin.py`, migrations, Twilio and Semaphore parts of `sms_app/services.py`, `README.md` |
 
 All members reviewed the complete application and can explain how each part works.
 
@@ -64,7 +63,7 @@ All members reviewed the complete application and can explain how each part work
 | Feature | Where | Description |
 |---|---|---|
 | **Message history** | *History* page | Every attempt (successful or failed) with date, recipient, message, status and error reason. Filter by status; 10 per page. |
-| **Message status tracking** | *History* → *Check status* | Asks the provider for the latest status (*Submitted → Sent to carrier → Delivered* or *Undelivered*). |
+| **Message status tracking** | *History* → *Check status* | With httpSMS, statuses update **automatically** through the delivery webhook (*Submitted → Sent to carrier → Delivered* or *Failed*). *Check status* asks the provider for the latest status and is the fallback for Twilio and httpSMS. |
 | **Dashboard** | *Dashboard* page | Totals for all attempts, delivered, awaiting confirmation and failed; attempts by status; provider acceptance rate; latest attempts. |
 | **Character counter** | *Send SMS* page | Live count of characters and SMS parts. Detects Unicode (e.g. emoji), which lowers the limit from 160 to 70 characters per SMS. |
 | **Message preview** | *Send SMS* page | Shows how the SMS will look and the number in international format before sending. |
@@ -157,7 +156,7 @@ django-sms-group5/
     ├── models.py              # SMSMessage: one row per sending attempt
     ├── forms.py               # SMSForm, phone number conversion, SMS part counting
     ├── services.py            # Twilio / Semaphore / Traccar / httpSMS / simulation providers + error handling
-    ├── views.py               # compose, history, check_status, dashboard
+    ├── views.py               # compose, history, check_status, dashboard, httpsms_webhook
     ├── urls.py                # App URLs
     ├── admin.py               # SMS messages in the Django admin
     ├── migrations/
@@ -174,6 +173,7 @@ django-sms-group5/
 | `/history/` | Message history and status tracking |
 | `/dashboard/` | Dashboard |
 | `/admin/` | Django admin (optional; needs `python manage.py createsuperuser`) |
+| `/webhooks/httpsms/` | Not a page: receives httpSMS delivery receipts (POST only, called by httpSMS) |
 
 ---
 
@@ -238,6 +238,7 @@ copy .env.example .env
 | `HTTPSMS_API_KEY` | httpSMS | API key from <https://httpsms.com/settings>. **Secret.** |
 | `HTTPSMS_FROM_NUMBER` | httpSMS | The phone number that sends the SMS, e.g. `09171234567`. |
 | `HTTPSMS_SERVER_URL` | No | API base URL. Default `https://api.httpsms.com` (change only for a self-hosted instance). |
+| `HTTPSMS_WEBHOOK_SIGNING_KEY` | httpSMS webhook | Shared secret used to verify delivery receipts sent by httpSMS. **Secret.** Must match the *Signing Key* entered in the httpSMS webhook settings. If blank, every webhook request is rejected (401). |
 
 > **Never commit `.env`.** It is already listed in `.gitignore`. Only
 > `.env.example`, which contains placeholders, is in the repository.
@@ -370,6 +371,63 @@ What the API supports:
 | Status check | `GET /v1/messages/<id>` → *Submitted → Sent to carrier → Delivered* (or *Failed*) |
 | Phone offline | The message stays *Pending* in httpSMS until the phone is reachable |
 
+#### Automatic delivery receipts (webhook)
+
+Instead of clicking *Check status*, httpSMS can push every status change to
+the app. The app exposes one endpoint for this:
+
+```
+POST /webhooks/httpsms/
+```
+
+Setup:
+
+1. **Create a signing key** and put it in `.env` (restart the server afterwards):
+
+   ```bat
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   ```env
+   HTTPSMS_WEBHOOK_SIGNING_KEY=the_key_you_just_generated
+   ```
+
+2. **Make the app reachable from the internet.** httpSMS runs in the cloud, so
+   it cannot call `http://127.0.0.1:8000`. Run a tunnel on the computer that
+   runs Django, for example ngrok:
+
+   ```bat
+   python manage.py runserver
+   ngrok http 8000
+   ```
+
+   ngrok prints a public address such as `https://abc123.ngrok-free.app`. Add
+   its host name to `DJANGO_ALLOWED_HOSTS` in `.env`
+   (e.g. `127.0.0.1,localhost,abc123.ngrok-free.app`) and restart the server,
+   otherwise Django rejects the request. Free tunnel addresses change each
+   time the tunnel restarts, so update the webhook URL when that happens.
+
+3. **Register the webhook in httpSMS.** Open <https://httpsms.com/settings>,
+   go to *Webhooks* and add a webhook with:
+   - **URL:** `https://abc123.ngrok-free.app/webhooks/httpsms/` (your public
+     address followed by `/webhooks/httpsms/`)
+   - **Signing key:** the same value as `HTTPSMS_WEBHOOK_SIGNING_KEY`
+   - **Events:** `message.phone.sent`, `message.phone.delivered`,
+     `message.send.failed` and `message.send.expired`
+
+How the app handles a receipt:
+
+| Topic | Behaviour |
+|---|---|
+| Authentication | httpSMS signs each request as a JWT (HS256) in the `Authorization: Bearer …` header. The app verifies it with `HTTPSMS_WEBHOOK_SIGNING_KEY`; a missing or invalid signature gets HTTP 401 and nothing is changed. The endpoint is exempt from CSRF because httpSMS is not a browser. |
+| Events used | `message.phone.sent` → **Sent to carrier**, `message.phone.delivered` → **Delivered (confirmed)**, `message.send.failed` and `message.send.expired` → **Failed**. Other events are ignored. |
+| Matching | The receipt's message ID is matched to the saved message. Unknown IDs are ignored. |
+| Order | A receipt only moves a status forward, never backwards, so a late *sent* receipt cannot undo *Delivered*. |
+| Response | HTTP 200 for every verified request, even if ignored, so httpSMS does not keep retrying. |
+
+If the tunnel is not running (or the webhook is not set up), nothing breaks:
+the message stays *Submitted* until you click *Check status* in *History*.
+
 ### Option E: Simulation mode (no account needed)
 
 ```env
@@ -404,7 +462,7 @@ Press `Ctrl+C` in the terminal to stop the server.
 
 ### 1. Automated tests
 
-The app has **84 automated tests** that use mocked provider APIs, so they run
+The app has **103 automated tests** that use mocked provider APIs, so they run
 offline and never send a real SMS or need real credentials.
 
 ```bat
@@ -412,9 +470,9 @@ python manage.py test
 ```
 
 ```
-Found 84 test(s).
+Found 103 test(s).
 ...
-Ran 84 tests in 0.3s
+Ran 103 tests in X.XXXs
 
 OK
 ```
@@ -422,8 +480,8 @@ OK
 | Test file | What it checks |
 |---|---|
 | `test_forms.py` (12) | Phone number conversion for 8 valid formats, 10 invalid numbers, empty fields, spaces-only message, message length, character and SMS part counting |
-| `test_services.py` (52) | Twilio, Semaphore, Traccar and httpSMS success, wrong credentials, invalid number, unverified trial number, unknown provider error, network error, timeout, missing configuration, status mapping (including *Delivered*), simulation mode |
-| `test_views.py` (20) | Full page flows: form display, valid send, every validation error, credential errors not leaking secrets, network errors, no double-send on refresh, CSRF protection, HTML escaping, history filter, status check, dashboard totals |
+| `test_services.py` (52) | Twilio, Semaphore, Traccar and httpSMS success, wrong credentials, invalid number, unverified trial number, unknown provider error, network error, timeout, missing configuration, status mapping (including *Delivered*), webhook event handling (status only moves forward, unknown IDs ignored), simulation mode |
+| `test_views.py` (39) | Full page flows: form display, valid send, every validation error, credential errors not leaking secrets, network errors, no double-send on refresh, CSRF protection, HTML escaping, history filter, status check, dashboard totals, health check, and the httpSMS webhook endpoint (valid, missing and wrong signature, bad payloads, POST only) |
 
 ### 2. Assignment test cases (Step 6)
 
@@ -441,13 +499,14 @@ OK
 
 | Test | Result |
 |---|---|
-| SMS to a verified/authorised test number | _To be filled in by the group after testing with the real provider account (date, provider, status shown)._ |
-| *Check status* after sending | _To be filled in._ |
+| SMS to a verified/authorised test number | ✅ Pass. Sent with httpSMS on Nov 17, 2026; the message reached **Delivered (confirmed)**. |
+| *Check status* after sending | _To be filled in (httpSMS statuses also update automatically through the webhook)._ |
 | Unverified number (Twilio trial) | _To be filled in. Expected: error 21608 explained._ |
 | Wrong Auth Token / API key | _To be filled in._ |
 | SMS via Traccar SMS Gateway (phone on the same Wi-Fi) | _To be filled in. Expected: **Submitted**; wrong API key → credentials error; phone off → "Could not reach the SMS gateway on the phone". |
-| SMS via httpSMS (phone with internet) | _To be filled in. Expected: **Submitted** with a message ID, then *Check status* → **Sent to carrier** → **Delivered**; wrong API key → credentials error. |
+| SMS via httpSMS (phone with internet) | ✅ Pass. On Nov 17, 2026 the message was **Submitted** with a message ID and then reached **Delivered (confirmed)**. Wrong API key → credentials error: _to be filled in._ |
 | Wi-Fi turned off while sending | _To be filled in. Expected: network error message._ |
+| httpSMS delivery webhook (through a tunnel) | ✅ Pass. Status updated to **Delivered (confirmed)** on Nov 17, 2026 without clicking *Check status*. |
 | Mobile browser layout | ✅ Pass. Works at 390 px wide with no horizontal scrolling. |
 
 ---
@@ -472,7 +531,7 @@ OK
 
 1. **Twilio and the Philippines.** As of November 2026, Twilio's trial program does not list the Philippines as a supported sign-up country, trial SMS is limited to the sign-up country, and trial accounts can only send Twilio's preset templates. Sending to Philippine numbers also requires a registered Sender ID (about 2 weeks to provision). Twilio delivery to Philippine phones may therefore not be possible on a trial account.
 2. **Semaphore** sends only to Philippine numbers, costs about ₱0.56 per SMS, and reports *Sent* (handed to the network), not handset delivery, so Semaphore messages never show *Delivered*.
-3. **Status updates are manual.** The app checks status when *Check status* is clicked. Automatic updates would need a provider webhook, which requires a public URL; the app runs on `localhost`.
+3. **Status updates are automatic only with httpSMS.** httpSMS pushes delivery receipts to the app's webhook (`/webhooks/httpsms/`), but because the app runs on `localhost`, this only works while a public tunnel (such as ngrok) is running and registered in the httpSMS settings. Without it, and for Twilio, *Check status* is the fallback. Semaphore and Traccar give no delivery confirmation at all.
 4. **Single user, no login.** Anyone who can open the app can send SMS; a real deployment would need user accounts.
 5. **One recipient per message.** Bulk sending and contact management are not included.
 6. **Development server only.** The app is configured for local use with `runserver` and SQLite, not production hosting.
