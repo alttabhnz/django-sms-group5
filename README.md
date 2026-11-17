@@ -393,12 +393,12 @@ Setup:
    ```
 
 2. **Make the app reachable from the internet.** httpSMS runs in the cloud, so
-   it cannot call `http://127.0.0.1:8000`. Run a tunnel on the computer that
+   it cannot call `http://127.0.0.1:8001`. Run a tunnel on the computer that
    runs Django, for example ngrok:
 
    ```bat
    python manage.py runserver
-   ngrok http 8000
+   ngrok http 8001
    ```
 
    ngrok prints a public address such as `https://abc123.ngrok-free.app`. Add
@@ -446,7 +446,7 @@ venv\Scripts\activate
 python manage.py runserver
 ```
 
-Open <http://127.0.0.1:8000/> in your browser.
+Open <http://127.0.0.1:8001/> in your browser.
 
 1. Enter the recipient's number (e.g. `09171234567`). On a Twilio trial it must be a verified number.
 2. Type a message and watch the character counter and preview.
